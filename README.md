@@ -177,6 +177,3 @@ ConcurrentX/
 └── benchmarks/
 ```
 
-## License
-
-No license file is included yet. Add one before publishing if you intend the project to be reused.
