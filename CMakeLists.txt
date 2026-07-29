@@ -18,6 +18,8 @@ option(CONCURRENTX_BUILD_BENCHMARKS "Build benchmarking harness" ON)
 # ---------------------------------------------------------------------------
 add_library(ConcurrentX
     src/exceptions.cpp
+    src/log.cpp
+    src/debug.cpp
     src/task.cpp
     src/execution_context.cpp
     src/thread_pool.cpp

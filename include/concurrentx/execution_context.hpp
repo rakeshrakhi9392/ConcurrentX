@@ -44,7 +44,7 @@ public:
  */
 class ReentrancyGuard {
 public:
-    explicit ReentrancyGuard(ThreadPool* pool) noexcept;
+    explicit ReentrancyGuard(ThreadPool* pool);
     ~ReentrancyGuard();
 
     ReentrancyGuard(const ReentrancyGuard&) = delete;

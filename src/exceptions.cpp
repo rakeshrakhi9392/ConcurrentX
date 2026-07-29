@@ -39,4 +39,7 @@ std::size_t TaskQueueOverflowException::capacity() const noexcept {
 EmptyTaskException::EmptyTaskException()
     : SchedulerException("attempted to run an empty or moved-from Task") {}
 
+AssertionFailureException::AssertionFailureException(std::string message)
+    : SchedulerException(std::move(message)) {}
+
 }  // namespace concurrentx

@@ -1,0 +1,50 @@
+---
+alwaysApply: true
+---
+
+# Project Requirements: Multithreaded Task Scheduler & Thread Pool Library
+
+## 1. Overview
+We need a lightweight, production-grade C++17 multithreaded task scheduler and thread pool library. The project demonstrates core systems engineering competencies, including deterministic resource management, raw memory safety, concurrency primitives, and safe reentrancy handling for high-performance applications.
+
+---
+
+## 2. Technical Stack & Constraints
+- **Language Standard:** C++17
+- **Build System:** CMake (minimum version 3.15)
+- **External Dependencies:** None for core library (GoogleTest or standard testing framework permitted for unit tests).
+- **Environment:** POSIX-compliant or Windows environment supporting standard multithreading primitives.
+
+---
+
+## 3. Core Functional Requirements
+
+### 3.1 Thread Pool & Worker Management
+- Implement a `ThreadPool` class that initializes a fixed or dynamic pool of worker threads using `std::vector<std::thread>`.
+- Enforce strict **RAII principles**: worker threads must be automatically joined and resources released safely during destruction.
+- Prevent thread leaks or dangling references during premature shutdown sequences.
+
+### 3.2 Thread-Safe Task Queue & Submission
+- Provide a generic task submission interface using type erasure or `std::packaged_task` to accept arbitrary callables with varying return types and arguments.
+- Return a `std::future<T>` to allow callers to retrieve the asynchronous result of any submitted task.
+- Protect the internal task queue using `std::mutex` and coordinate worker wake-ups using `std::condition_variable` to eliminate busy-waiting and race conditions.
+
+### 3.3 Reentrancy Control & Safety
+- Design task execution context handling to support reentrant function calls safely across concurrent worker threads.
+- Implement thread-local storage (TLS) guards or synchronization blocks to track recursive or reentrant execution pathways, preventing state corruption.
+
+### 3.4 Error Handling & Exception Propagation
+- Define a custom exception hierarchy inheriting from `std::exception` (e.g., `SchedulerStoppedException`, `TaskQueueOverflowException`).
+- Catch exceptions thrown during asynchronous task execution inside worker threads and safely propagate them back to the calling thread via the associated `std::future`.
+
+### 3.5 Benchmarking & Profiling Harness
+- Build a separate command-line executable acting as a benchmarking harness.
+- Measure and profile throughput, task completion latency, and execution times under varying thread counts ($1, 2, 4, 8, 16$).
+- Output metrics in a structured format (such as CSV) for performance analysis.
+
+---
+
+## 4. Non-Functional & Code Quality Requirements
+- **Modularity:** Clean separation between public interface headers (`include/`) and source implementation files (`src/`).
+- **Memory Safety:** Zero raw pointer ownership on the heap; utilize smart pointers (`std::unique_ptr`, `std::shared_ptr`) exclusively.
+- **Documentation:** Inline comments explaining complex synchronization boundaries, lock acquisition orders, and ownership semantics.

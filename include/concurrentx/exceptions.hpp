@@ -7,6 +7,22 @@
 namespace concurrentx {
 
 /**
+ * Custom exception hierarchy for ConcurrentX.
+ *
+ *   std::exception
+ *     └── SchedulerException            (base; owns message by value)
+ *           ├── SchedulerStoppedException
+ *           ├── TaskQueueOverflowException
+ *           ├── EmptyTaskException
+ *           └── AssertionFailureException
+ *
+ * Task-body failures are not wrapped in this hierarchy: submit() uses
+ * std::packaged_task so the original exception is stored in the associated
+ * std::future and rethrown by future.get() / ThreadPool::wait() on the
+ * calling thread.
+ */
+
+/**
  * Base type for all scheduler / thread-pool failures.
  * Derived types carry specific failure modes; messages are owned by value.
  */
@@ -49,6 +65,15 @@ private:
 class EmptyTaskException : public SchedulerException {
 public:
     EmptyTaskException();
+};
+
+/**
+ * Thrown by CX_ASSERT* when AssertMode::Throw is active (or a custom
+ * handler elects to throw). Not used for normal task failures.
+ */
+class AssertionFailureException : public SchedulerException {
+public:
+    explicit AssertionFailureException(std::string message);
 };
 
 }  // namespace concurrentx

@@ -1,0 +1,26 @@
+---
+alwaysApply: true
+---
+
+# Project Rules: Multithreaded Task Scheduler in C++17
+
+## Architectural Constraints
+- Write modern, standard-compliant C++17 code without relying on external third-party libraries except for GoogleTest in the test suite.
+- Keep the design clean, modular, and suitable for a low-to-medium complexity entry-level systems portfolio piece.
+- Separate interface headers (.h/.hpp) from implementation files (.cpp) completely.
+
+## Concurrency & Memory Safety
+- Adhere strictly to RAII principles for all thread lifecycles and resource handles.
+- Use smart pointers (`std::unique_ptr`, `std::shared_ptr`) for all heap allocations to guarantee zero memory leaks.
+- Ensure all shared state access across worker threads is protected using `std::mutex` and coordinated with `std::condition_variable`.
+- Implement thread-safe synchronization for the task queue and worker coordination without deadlocks or race conditions.
+
+## Reentrancy & Robustness
+- Design task execution to safely handle reentrant function calls using thread-local storage or non-blocking synchronization constructs.
+- Propagate exceptions thrown inside worker threads back to the caller using `std::future` and `std::packaged_task`.
+- Define a custom exception hierarchy inheriting from `std::exception` for scheduler-specific failure modes.
+
+## Code Quality & Testing
+- Write self-documenting code with clear inline comments explaining synchronization logic and ownership models.
+- Provide a robust CMake configuration that builds the library, the benchmarking harness, and the test suite cleanly.
+- Include comprehensive unit tests covering edge cases such as graceful shutdown under load, task reentrancy, and high concurrency contention.

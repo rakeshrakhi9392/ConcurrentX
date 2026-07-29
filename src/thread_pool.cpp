@@ -1,13 +1,17 @@
 #include "concurrentx/thread_pool.hpp"
 
+#include "concurrentx/debug.hpp"
 #include "concurrentx/exceptions.hpp"
 #include "concurrentx/execution_context.hpp"
+#include "concurrentx/log.hpp"
 
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <exception>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -51,6 +55,7 @@ struct ThreadPool::Impl {
      * ReentrancyGuard publishes TLS ExecutionContext for the task body.
      */
     void worker_main() {
+        CX_LOG_DEBUG << "worker started (pool threads=" << thread_count_ << ')';
         for (;;) {
             Task task;
             {
@@ -63,23 +68,33 @@ struct ThreadPool::Impl {
                            !queue_.empty();
                 });
                 if (queue_.empty()) {
+                    // Invariant: empty queue on wake implies stop was published.
+                    CX_INVARIANT(stop_.load(std::memory_order_relaxed));
+                    CX_LOG_DEBUG << "worker exiting (queue drained, stop set)";
                     return;
                 }
                 task = std::move(queue_.front());
                 queue_.pop_front();
             }
 
+            CX_INVARIANT(static_cast<bool>(task));
             run_task(std::move(task));
         }
     }
 
     void run_task(Task task) {
+        CX_INVARIANT(owner_ != nullptr);
         ReentrancyGuard guard(owner_);
-        // Exceptions from packaged_task land in the associated future.
-        // Absorb anything else so one bad task cannot terminate a worker.
+        // submit() wraps callables in packaged_task: exceptions are captured
+        // into the associated std::future and rethrown by future.get()/wait().
+        // Absorb anything that escapes a raw Task so one bad job cannot kill
+        // the worker thread.
         try {
             task.run();
+        } catch (const std::exception& ex) {
+            CX_LOG_ERROR << "uncaught task exception (absorbed): " << ex.what();
         } catch (...) {
+            CX_LOG_ERROR << "uncaught non-std task exception (absorbed)";
         }
     }
 
@@ -104,6 +119,11 @@ struct ThreadPool::Impl {
 
 ThreadPool::ThreadPool(std::size_t thread_count, std::size_t max_queue_size)
     : impl_(std::make_unique<Impl>(this, thread_count, max_queue_size)) {
+    CX_LOG_INFO << "ThreadPool created: threads=" << impl_->thread_count_
+                << " max_queue="
+                << (impl_->max_queue_size_ == 0 ? std::string("unbounded")
+                                                : std::to_string(impl_->max_queue_size_));
+
     // Spawn workers after Impl is fully constructed. If emplace_back throws
     // mid-loop, stop + join the threads already started before rethrowing so
     // no joinable thread is abandoned (RAII / no thread leak).
@@ -114,6 +134,7 @@ ThreadPool::ThreadPool(std::size_t thread_count, std::size_t max_queue_size)
             impl_->workers_.emplace_back([self] { self->worker_main(); });
         }
     } catch (...) {
+        CX_LOG_ERROR << "ThreadPool worker spawn failed; joining partial pool";
         {
             std::lock_guard<std::mutex> lock(impl_->mutex_);
             impl_->stop_.store(true, std::memory_order_release);
@@ -150,7 +171,12 @@ void ThreadPool::stop() {
         // Publish stop under the same mutex workers wait on so the flag and
         // the condition_variable wake-up are not reordered relative to wait.
         std::lock_guard<std::mutex> lock(impl_->mutex_);
+        const bool already = impl_->stop_.load(std::memory_order_relaxed);
         impl_->stop_.store(true, std::memory_order_release);
+        if (!already) {
+            CX_LOG_INFO << "ThreadPool stop requested (queued="
+                        << impl_->queue_.size() << ')';
+        }
     }
     impl_->cv_.notify_all();
 }
@@ -172,8 +198,11 @@ std::size_t ThreadPool::queued_tasks() const noexcept {
 }
 
 void ThreadPool::enqueue(Task task) {
+    CX_ASSERT(static_cast<bool>(task));
+
     // Fast path: reject without contending if shutdown already published.
     if (!impl_ || impl_->stop_.load(std::memory_order_acquire)) {
+        CX_LOG_WARN << "submit rejected: scheduler stopped";
         throw SchedulerStoppedException{};
     }
 
@@ -181,11 +210,15 @@ void ThreadPool::enqueue(Task task) {
         std::lock_guard<std::mutex> lock(impl_->mutex_);
         // Re-check under lock: stop() may have won the race after the load.
         if (impl_->stop_.load(std::memory_order_relaxed)) {
+            CX_LOG_WARN << "submit rejected: scheduler stopped (under lock)";
             throw SchedulerStoppedException{};
         }
         if (!impl_->try_push_unlocked(std::move(task))) {
+            CX_LOG_WARN << "submit rejected: queue overflow capacity="
+                        << impl_->max_queue_size_;
             throw TaskQueueOverflowException{impl_->max_queue_size_};
         }
+        CX_LOG_TRACE << "task enqueued (depth=" << impl_->queue_.size() << ')';
     }
     // Notify outside the critical section: the woken worker only needs the
     // mutex after we have released it, reducing lock hold time.

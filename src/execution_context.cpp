@@ -1,5 +1,10 @@
 #include "concurrentx/execution_context.hpp"
 
+#include "concurrentx/debug.hpp"
+#include "concurrentx/log.hpp"
+
+#include <cstdlib>
+
 namespace concurrentx {
 
 namespace {
@@ -27,15 +32,33 @@ ThreadPool* ExecutionContext::current_pool() noexcept {
     return tls_pool;
 }
 
-ReentrancyGuard::ReentrancyGuard(ThreadPool* pool) noexcept
+ReentrancyGuard::ReentrancyGuard(ThreadPool* pool)
     : previous_pool_(tls_pool) {
+    // Workers always pass a live pool pointer; nullptr would break
+    // current_pool() observers and nested wait()/get() helping.
+    CX_INVARIANT(pool != nullptr);
     tls_pool = pool;
     ++tls_depth;
+    CX_INVARIANT(tls_depth > 0);
 }
 
 ReentrancyGuard::~ReentrancyGuard() {
+    // Nesting must be balanced. Never throw from a destructor — abort on
+    // invariant failure even when AssertMode::Throw is active.
+#if CONCURRENTX_ENABLE_ASSERTS
+    if (tls_depth == 0) {
+        CX_LOG_ERROR << "ReentrancyGuard depth underflow";
+        std::abort();
+    }
+#endif
     --tls_depth;
     tls_pool = previous_pool_;
+#if CONCURRENTX_ENABLE_ASSERTS
+    if ((tls_depth == 0) != (tls_pool == nullptr)) {
+        CX_LOG_ERROR << "ReentrancyGuard TLS pool/depth mismatch";
+        std::abort();
+    }
+#endif
 }
 
 }  // namespace concurrentx
